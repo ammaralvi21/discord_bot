@@ -61,7 +61,7 @@ async def join_play_audio(state: VoiceState, audio: FFmpegPCMAudio):
 
 
 def get_tts(text, filename):
-    filepath = f'/home/bbandit/ws/discord_bot/{filename}.mp3'
+    filepath = f'/tmp/{filename}.mp3'
     myobj = gTTS(text=text, lang='en', slow=False)
     myobj.save(filepath)
     return FFmpegPCMAudio(filepath)
