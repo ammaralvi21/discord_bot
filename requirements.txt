@@ -2,3 +2,6 @@ discord.py
 python-dotenv
 PyNaCl
 gTTS
+torch
+transformers
+emoji

@@ -1,5 +1,6 @@
 import os
 import discord
+import sys
 from discord import VoiceState, Member, FFmpegPCMAudio
 from discord.ext.commands import Bot
 from dotenv import load_dotenv
@@ -8,6 +9,27 @@ from gtts import gTTS
 import datetime
 import random
 import asyncio
+import logging
+import emoji
+from transformers import BartTokenizer, BartForConditionalGeneration
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
+LOG = logging.getLogger(__name__)
+
+LOG.info('Fetching Komeiji Bart Emoji')
+path = "KomeijiForce/bart-large-emojilm"
+tokenizer = BartTokenizer.from_pretrained(path)
+generator = BartForConditionalGeneration.from_pretrained(path)
+
+def translate(sentence, **argv):
+    inputs = tokenizer(sentence, return_tensors="pt")
+    generated_ids = generator.generate(inputs["input_ids"], **argv)
+    decoded = tokenizer.decode(generated_ids[0], skip_special_tokens=True).replace(" ", "")
+    return decoded
 
 
 load_dotenv()
@@ -19,19 +41,19 @@ intents.message_content = True
 
 client = discord.Client(intents=intents)
 
-print('Fetching word list')
+LOG.info('Fetching word list')
 WORDLE_WORDS = open("wordle.txt").read().splitlines()
 
 @client.event
 async def on_ready():
-    print(f'{client.user=}')
-    print(f'{client.user.id=}')
+    LOG.info(f'{client.user=}')
+    LOG.info(f'{client.user.id=}')
     for guild in client.guilds:
         for channel in guild.channels:
-            print(f"{channel=}")
+            LOG.info(f"{channel=}")
         if guild.name == GUILD:
             break
-    print(f'{client.user} is connected to the following guild: {guild.name}(id: {guild.id})')
+    LOG.info(f'{client.user} is connected to the following guild: {guild.name}(id: {guild.id})')
     client.loop.create_task(wordle_word())
     # myobj = gTTS(text=f"Hey there fuckers", lang='en', slow=False)
     # myobj.save("welcome.mp3")
@@ -75,7 +97,7 @@ def get_tts(text, filename):
 
 @client.event
 async def on_voice_state_update(member: Member, before: VoiceState, after: VoiceState):
-    print(f"on_voice_state_update {member=}, {before=}, {after=}")
+    LOG.info(f"on_voice_state_update {member=}, {before=}, {after=}")
     if member.nick is not None:
         name = member.nick
     else:
@@ -110,35 +132,39 @@ async def on_voice_state_update(member: Member, before: VoiceState, after: Voice
         await join_play_audio(state=after,  audio=get_tts(text=f"{name} has joined", filename="welcome"))
 
 async def wordle_word():
+    LOG.info(f"wordle_word: initializing")
     last = time.time()
     await client.wait_until_ready()
     my_chan = None
+    LOG.info(f"wordle_word: finding guild + channel")
     for guild in client.guilds:
         if guild.name == GUILD:
             for channel in guild.channels:
                 if channel.name == "scotts-miners":
                     my_chan = channel
-                    print(f"Channel found {channel=}")
+                    LOG.info(f"Channel found {channel=}")
                     break
+    LOG.info(f"wordle_word: entering main loop")
     while not client.is_closed():
-        curr_hr = datetime.datetime.now().hour
+        curr_hr = datetime.datetime.now(datetime.UTC).hour
         elapsed = time.time() - last
-        wait_s = 3*3600
-        schedule_hr = 4
-        print(f"Alive message, {curr_hr=}, {elapsed=}, {wait_s=}")
+        wait_s = 3*3600    # 3 hour wait
+        schedule_hr = 11   # At utc=11, pst=4, est=7
+        LOG.info(f"Alive message, {curr_hr=}, {elapsed=}, {wait_s=}")
         if curr_hr == schedule_hr and elapsed > wait_s:
+            LOG.info(f"Hour match and elapsed time match")
             last = time.time()
             if my_chan is not None:
-                await my_chan.send(content=f'Today\'s random word: "{random.choice(WORDLE_WORDS)}"')
+                await my_chan.send(content=f'WAKE UP!!!!!, Today\'s first word: "{random.choice(WORDLE_WORDS)}"')
             else:
-                print(f"Channel not found {client.guilds=}")
+                LOG.info(f"Channel not found {client.guilds=}")
                 for guild in client.guilds:
                     for channel in guild.channels:
-                        print(f"Available channels: {guild=} {channel=}")
-        await asyncio.sleep(20)
+                        LOG.info(f"Available channels: {guild=} {channel=}")
+        await asyncio.sleep(30)
 
 @client.event
-async def on_message(message):
+async def on_message(message: discord.Message):
     if message.author == client.user:
         return
 
@@ -147,5 +173,14 @@ async def on_message(message):
         p.add_answer(text="Yes")
         p.add_answer(text="No")
         await message.channel.send(poll=p)
+    if message.author.nick in ['Ammar', 'Brandon'] and message.channel.name == "scotts-miners":
+        sentence = message.content
+        decoded = translate(sentence, num_beams=4, do_sample=True, max_length=100)
+        valid_emojis = []
+        for ch in decoded:
+            if emoji.is_emoji(ch):
+                valid_emojis.append(ch)
+        for emj in valid_emojis:
+            await message.add_reaction(emj)
 
 client.run(TOKEN)
